@@ -1,28 +1,45 @@
 import cors from "cors";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { buildOAuthRouter, extractApiKey } from "./oauth.js";
 import { createFlussServer } from "./server.js";
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID;
+const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET;
+
+if (!JWT_SECRET || !OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET) {
+  console.error("Missing required env vars: JWT_SECRET, OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET");
+  process.exit(1);
+}
 
 const app = express();
 
 app.use(cors({
   origin: "*",
-  allowedHeaders: ["Content-Type", "x-fluss-api-key", "mcp-session-id"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-fluss-api-key", "mcp-session-id"],
   exposedHeaders: ["mcp-session-id"],
   methods: ["GET", "POST", "DELETE", "OPTIONS"],
 }));
 
 app.use(express.json());
 
+// OAuth 2.0 endpoints (discovery, authorize, token)
+app.use(buildOAuthRouter({ jwtSecret: JWT_SECRET, clientId: OAUTH_CLIENT_ID, clientSecret: OAUTH_CLIENT_SECRET }));
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
 app.post("/mcp", async (req, res) => {
-  const apiKey = req.headers["x-fluss-api-key"] ?? process.env.FLUSS_API_KEY;
+  const apiKey = await extractApiKey(
+    req.headers.authorization,
+    req.headers["x-fluss-api-key"] as string | undefined,
+    JWT_SECRET,
+  );
 
-  if (typeof apiKey !== "string" || !apiKey) {
-    res.status(401).json({ error: "x-fluss-api-key header or FLUSS_API_KEY env var is required" });
+  if (!apiKey) {
+    res.status(401).json({ error: "Unauthorized — provide a Bearer token (OAuth) or x-fluss-api-key header" });
     return;
   }
 
