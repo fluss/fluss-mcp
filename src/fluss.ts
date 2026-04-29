@@ -1,6 +1,7 @@
 const BASE = "https://v1.fluss-api.com";
 
 async function request(apiKey: string, path: string, method = "GET", body?: unknown) {
+  console.log('using this api key', apiKey)
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
